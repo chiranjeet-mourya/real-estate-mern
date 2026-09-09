@@ -1,11 +1,13 @@
 import dotenv from "dotenv";
 dotenv.config();
+
 import express from "express";
 import cors from "cors";
-
 import http from "http";
-import {Server} from "socket.io"
+import { Server } from "socket.io";
+
 import { connectDB } from "./config/db.js";
+
 import authRouter from "./routes/auth.route.js";
 import userRouter from "./routes/user.route.js";
 import propertyRouter from "./routes/property.route.js";
@@ -16,7 +18,31 @@ import adminRouter from "./routes/admin.route.js";
 import chatRouter from "./routes/chat.route.js";
 
 const app = express();
-const PORT = 5000;
+
+const PORT = process.env.PORT || 5000;
+
+const allowedOrigin = process.env.FRONTEND_URL;
+
+app.use(
+  cors({
+    origin: function (origin, callback) {
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      if (origin === allowedOrigin) {
+        return callback(null, true);
+      }
+
+      return callback(new Error("Not allowed by CORS"));
+    },
+    credentials: true,
+  })
+);
+
+
+app.use(express.json());
+
 
 app.get("/", (req, res) => {
   res.json({
@@ -25,27 +51,8 @@ app.get("/", (req, res) => {
   });
 });
 
-// DB
 connectDB();
 
-const allowedOrigin = ["http://localhost:5173"].filter(Boolean);
-
-// Middleware
-app.use(
-  cors({
-    origin: function (origin, callback) {
-      if (!origin || allowedOrigin.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error("Not allowed by CORS"));
-      }
-    },
-    credentials: true,
-  }),
-);
-app.use(express.json());
-
-// Routes
 app.use("/api/auth", authRouter);
 app.use("/api/user", userRouter);
 app.use("/api/property", propertyRouter);
@@ -55,30 +62,37 @@ app.use("/api/chat", chatRouter);
 app.use("/api/admin", adminRouter);
 app.use("/api/contact", contactRouter);
 
+
 const server = http.createServer(app);
 
 const io = new Server(server, {
-    cors:{
-        origin:allowedOrigin,
-        methods:["GET", "POST"]
-    },
+  cors: {
+    origin: allowedOrigin,
+    methods: ["GET", "POST"],
+    credentials: true,
+  },
 });
 
-io.on("connection", (socket) =>{
-    socket.on("joinChat", (chatId) =>{
-        socket.join(chatId)
-    });
+io.on("connection", (socket) => {
+  console.log("User connected:", socket.id);
 
-    socket.on("sendMessage", (data) =>{
-        io.on(data.chatId).emit("receiveMessage", data);
-    });
+  socket.on("joinChat", (chatId) => {
+    socket.join(chatId);
 
-    socket.on("disconnect", () =>{
+    console.log(`Socket ${socket.id} joined chat: ${chatId}`);
+  });
 
-    });
+  socket.on("sendMessage", (data) => {
+    console.log("Message received:", data);
 
+    io.to(data.chatId).emit("receiveMessage", data);
+  });
+
+  socket.on("disconnect", () => {
+    console.log("User disconnected:", socket.id);
+  });
 });
 
 server.listen(PORT, "0.0.0.0", () => {
-  console.log(`Server Started at http://localhost:${PORT}`);
+  console.log(`Server started on port ${PORT}`);
 });
